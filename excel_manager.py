@@ -1,7 +1,7 @@
 import os
 from openpyxl import Workbook, load_workbook
 
-EXCEL_FILE = "daily_info.xlsx"
+EXCEL_FILE = "cash_register/daily_info.xlsx"
 HEADERS = [
     "Date and Time",
     "Cashier",

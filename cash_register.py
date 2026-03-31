@@ -82,7 +82,7 @@ def format_money_input_text(raw_text: str) -> str:
     return grouped_whole
 
 
-def load_cashier_names(file_name: str = "cashiers.txt") -> list[str]:
+def load_cashier_names(file_name: str = "cash_register/cashiers.txt") -> list[str]:
     file_path = Path(__file__).resolve().parent / file_name
     if not file_path.exists():
         return []
@@ -565,6 +565,14 @@ class CashRegisterWindow(QMainWindow):
                 f"Ma'lumotlarni Excelga yozishda xatolik:\n{e}",
             )
             return
+
+        import subprocess
+        from pathlib import Path
+        try:
+            script_path = Path(__file__).resolve().parent / "data_cleaner.py"
+            subprocess.run([sys.executable, str(script_path)], check=True)
+        except Exception as e:
+            print(f"Failed to run data_cleaner.py: {e}")
 
         global LAST_SUBMISSION
         LAST_SUBMISSION = submission

@@ -1,11 +1,11 @@
 from __future__ import annotations
-
 import sys
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+import excel_manager
 from PySide6.QtCore import QEventLoop, QRegularExpression, QTimer, Qt, Signal
 from PySide6.QtGui import QFont, QRegularExpressionValidator
 from PySide6.QtWidgets import (
@@ -553,6 +553,16 @@ class CashRegisterWindow(QMainWindow):
                 self,
                 "Invalid Input",
                 "Malumotlarni tekshirib qaytadan kiriting.",
+            )
+            return
+
+        try:
+            excel_manager.append_to_excel(submission)
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Excel Error",
+                f"Ma'lumotlarni Excelga yozishda xatolik:\n{e}",
             )
             return
 

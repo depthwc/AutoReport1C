@@ -1,1 +1,0 @@
-ase verify HUMO, UZCARD, and NAQD fields contain valid amounts.

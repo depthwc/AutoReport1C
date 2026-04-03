@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
 )
 
 
-# Reusable module-level variable with the last submitted report.
 LAST_SUBMISSION: dict[str, Any] | None = None
 
 
@@ -92,6 +91,11 @@ def load_cashier_names(file_name: str = "cash_register/cashiers.txt") -> list[st
 
 
 class CashRegisterWindow(QMainWindow):
+    """
+    Main GUI window for the daily cash register application.
+    Allows cashiers to input daily income (Humo, Uzcard, Cash) and expenses.
+    It calculates totals automatically and saves the submitted report to an Excel file.
+    """
     closed = Signal()
 
     def __init__(self) -> None:
@@ -461,6 +465,9 @@ class CashRegisterWindow(QMainWindow):
         return parse_money(field.text())
 
     def add_expense(self) -> None:
+        """
+        Reads the user's input for a new expense and adds it to the list.
+        """
         try:
             amount = self.get_money_value(self.expense_amount_input)
         except ValueError:
@@ -468,11 +475,13 @@ class CashRegisterWindow(QMainWindow):
             return
 
         reason = self.expense_reason_input.text().strip()
+        
         if amount <= 0:
             QMessageBox.warning(
                 self, "Invalid Amount", "Malumotni tekshirib qaytadan kiriting."
             )
             return
+            
         if not reason:
             QMessageBox.warning(
                 self, "Missing Description", "Izoh qoldiring."
@@ -481,11 +490,14 @@ class CashRegisterWindow(QMainWindow):
 
         entry = {"reason": reason, "amount": amount}
         self.expenses.append(entry)
+        
         self.expense_list.addItem(
             f"{len(self.expenses):02d}. {reason}   |   {format_money(amount)}"
         )
+        
         self.expense_amount_input.clear()
         self.expense_reason_input.clear()
+        
         self.refresh_totals()
 
     def remove_selected_expense(self) -> None:
@@ -501,7 +513,6 @@ class CashRegisterWindow(QMainWindow):
         self.expense_list.takeItem(selected_row)
         del self.expenses[selected_row]
 
-        # Rebuild labels to keep numbering consistent.
         self.expense_list.clear()
         for index, entry in enumerate(self.expenses, start=1):
             self.expense_list.addItem(
@@ -510,20 +521,28 @@ class CashRegisterWindow(QMainWindow):
         self.refresh_totals()
 
     def refresh_totals(self) -> None:
+        """
+        Recalculates the "Rasxod Total" and "Income Total" at the bottom of the screen.
+        Called automatically whenever a number field changes or an expense is added/removed.
+        """
         expenses_total = sum(
             (entry["amount"] for entry in self.expenses), start=Decimal("0")
         )
+        
         income_total = Decimal("0")
         for field in (self.humo_input, self.uzcard_input, self.naqd_input):
             try:
                 income_total += self.get_money_value(field)
             except ValueError:
                 pass
-
         self.rasxod_total_label.setText(f"Jami Rasxot: {format_money(expenses_total)}")
         self.jami_summa_label.setText(f"Jami Summa: {format_money(income_total)}")
 
     def build_submission_payload(self) -> dict[str, Any]:
+        """
+        Gathers all inputted data from the form (income, expenses, cashier name, description)
+        and structures it into a dictionary to be saved.
+        """
         humo = self.get_money_value(self.humo_input)
         uzcard = self.get_money_value(self.uzcard_input)
         naqd = self.get_money_value(self.naqd_input)
@@ -546,6 +565,13 @@ class CashRegisterWindow(QMainWindow):
         }
 
     def submit_report(self) -> None:
+        """
+        Handles the submission process:
+        1. Validates input data.
+        2. Cleans raw 1C data using `data_cleaner`.
+        3. Extracts today's 1C sales and quantity totals.
+        4. Saves all the gathered data to the Excel database using `excel_manager`.
+        """
         try:
             submission = self.build_submission_payload()
         except ValueError:
@@ -556,6 +582,36 @@ class CashRegisterWindow(QMainWindow):
             )
             return
 
+    
+        import data_cleaner
+        import pandas as pd
+        
+        try:
+            data_cleaner.process_all_raw_data()
+        except Exception as e:
+            print(f"Failed during data cleaning: {e}")
+
+        today_str = datetime.now().strftime("%d.%m.%Y")
+        today_file = Path(__file__).resolve().parent / "clean_data" / "day" / f"{today_str}.xlsx"
+        
+        sum_quantity = 0
+        sum_sales = 0
+        
+        if today_file.exists():
+            try:
+                df = pd.read_excel(str(today_file))
+                if 'quantity' in df.columns and 'sales' in df.columns:
+                    sum_quantity = int(df['quantity'].sum())
+                    sum_sales = int(df['sales'].sum())
+            except Exception as e:
+                print(f"Error reading today's 1C data: {e}")
+        else:
+            print(f"No 1C data found for today ({today_file}) - defaulting to 0")
+            
+        submission["sum_quantity"] = sum_quantity
+        submission["sum_sales"] = sum_sales
+
+        # excel
         try:
             excel_manager.append_to_excel(submission)
         except Exception as e:
@@ -566,20 +622,12 @@ class CashRegisterWindow(QMainWindow):
             )
             return
 
-        import subprocess
-        from pathlib import Path
-        try:
-            script_path = Path(__file__).resolve().parent / "data_cleaner.py"
-            subprocess.run([sys.executable, str(script_path)], check=True)
-        except Exception as e:
-            print(f"Failed to run data_cleaner.py: {e}")
-
         global LAST_SUBMISSION
         LAST_SUBMISSION = submission
         self.submitted_data = submission
         self.close()
 
-    def closeEvent(self, event) -> None:  # noqa: N802
+    def closeEvent(self, event) -> None:  
         self.closed.emit()
         super().closeEvent(event)
 

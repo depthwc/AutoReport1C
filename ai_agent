@@ -1,9 +1,0 @@
-curl -X POST "https://1pro.uz/v1/chat/completions" \
-  -H "Authorization: Bearer SIZNING_API_KEYINGIZ" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "coder",
-    "messages": [
-      { "role": "user", "content": "Salom, o'\''zingni qisqacha tanishtir." }
-    ]
-  }'

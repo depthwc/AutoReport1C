@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit, QListWidget, QFrame,
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
-    QScrollArea, QSpinBox, QMessageBox, QComboBox, QToolTip
+    QScrollArea, QSpinBox, QMessageBox, QComboBox, QToolTip, QTextBrowser
 )
 from PySide6.QtCharts import (
         QChart, QChartView, QBarSeries, QBarSet, QBarCategoryAxis, QValueAxis, QCategoryAxis,
@@ -74,7 +74,7 @@ QToolTip {
     border: 1px solid #ffffff;
     border-radius: 6px;
 }
-QLineEdit, QListWidget, QTableWidget, QSpinBox, QComboBox {
+QLineEdit, QListWidget, QTextBrowser, QTableWidget, QSpinBox, QComboBox {
     background: #fcfdff;
     border: 1px solid #cbd6e2;
     border-radius: 8px;
@@ -136,13 +136,16 @@ from ai_agent import AIChatWorker
 class ReportViewer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AutoReport1C Viewer")
+        self.setWindowTitle("Auto Report Viewer")
         self.resize(1400, 900)
         self.setStyleSheet(STYLESHEET)
         
-        self.ai_messages = [
+        current_page = ""
+        data_table = ""
+        self.ai_messages = [{"role": "system", "content": f"Information : Current page name {current_page}, Source table {data_table}" },
             {"role": "system", "content": "You are AI assistant for application called AutoReport. You will give informations about data. You will use tools when needed. You will keep things short and accuret. You use Uzbek language, but if user messages in other language you will switch to that language"}
         ]
+        self.chat_history_str = ""
         
         self.bar_labels = []
         self.bar_full_names = []
@@ -177,8 +180,8 @@ class ReportViewer(QMainWindow):
         ai_title = QLabel("AI Agent Yordamchisi")
         ai_title.setObjectName("Section")
         
-        self.chat_list = QListWidget()
-        self.chat_list.setWordWrap(True)
+        self.chat_list = QTextBrowser()
+        self.chat_list.setOpenExternalLinks(True)
         
         chat_input_layout = QHBoxLayout()
         self.chat_input = QLineEdit()
@@ -244,7 +247,7 @@ class ReportViewer(QMainWindow):
         ctrl_layout = QHBoxLayout(ctrl_card)
         ctrl_layout.addWidget(QLabel("Chart Sorting:"))
         self.chart_sort_combo = QComboBox()
-        self.chart_sort_combo.addItems(["Sotuv (Sales)", "Miqdor (Quantity)"])
+        self.chart_sort_combo.addItems(["Sotuv", "Miqdor"])
         self.chart_sort_combo.currentTextChanged.connect(self._update_bar_chart)
         ctrl_layout.addWidget(self.chart_sort_combo)
         
@@ -303,7 +306,7 @@ class ReportViewer(QMainWindow):
         
         # Right side - Native Qt Line Chart
         line_vbox = QVBoxLayout()
-        self.line_head_lbl = QLabel("Oylik Kassa Sotuvlari (1C_Total_Sales)")
+        self.line_head_lbl = QLabel("Kunlik Sotuvlar")
         self.line_head_lbl.setObjectName("Section")
         self.line_head_lbl.setAlignment(Qt.AlignCenter)
         line_vbox.addWidget(self.line_head_lbl)
@@ -436,6 +439,36 @@ class ReportViewer(QMainWindow):
                 self.summary_card.setVisible(False)
             self._update_bar_chart()
             self._update_table()
+            
+            current_page = filename
+            
+            total_sales = 0
+            total_qty = 0
+            top_sales_str = "N/A"
+            top_qty_str = "N/A"
+            
+            if not self.current_df.empty:
+                if 'sales' in self.current_df.columns:
+                    total_sales = self.current_df['sales'].sum()
+                if 'quantity' in self.current_df.columns:
+                    total_qty = self.current_df['quantity'].sum()
+                    
+                top_sales_df = report_fun.get_top_products(self.current_df, sort_by='sales', head=5)
+                if not top_sales_df.empty:
+                    top_sales_str = top_sales_df[['product_name', 'sales']].to_string(index=False)
+                    
+                top_qty_df = report_fun.get_top_products(self.current_df, sort_by='quantity', head=5)
+                if not top_qty_df.empty:
+                    top_qty_str = top_qty_df[['product_name', 'quantity']].to_string(index=False)
+            
+            summary_info = (
+                f"Sotuvlar summasi (Total Sales): {self._format_money(total_sales)}\n"
+                f"Sotilgan malumotlar miqdori (Total Quantity): {self._format_money(total_qty)}\n"
+                f"Eng ko'p sotilgan 5ta mahsulot (Top 5 by Sales):\n{top_sales_str}\n"
+                f"Eng ko'p miqdorda sotilgan 5ta mahsulot (Top 5 by Quantity):\n{top_qty_str}"
+            )
+            
+            self.ai_messages[0]["content"] = f"Information: Current page name {current_page}\n\nSummary:\n{summary_info}"
         except Exception as e:
             QMessageBox.warning(self, "Xatolik", f"Faylni o'qishda xatolik: {e}")
 
@@ -448,7 +481,7 @@ class ReportViewer(QMainWindow):
         if self.current_df is None or self.current_df.empty:
             return
             
-        sort_by = "sales" if "Sales" in self.chart_sort_combo.currentText() else "quantity"
+        sort_by = "sales" if "Sotuv" in self.chart_sort_combo.currentText() else "quantity"
         limit = self.chart_limit_spin.value()
         
         self.bar_head_lbl.setText(f"Top {limit} Mahsulot ({self.chart_sort_combo.currentText()})")
@@ -697,31 +730,36 @@ class ReportViewer(QMainWindow):
             return
             
         self.ai_messages.append({"role": "user", "content": text})
-        self.chat_list.addItem(f"👤 Siz: {text}")
+        self.chat_history_str += f"**👤 Siz:** {text}\n\n"
+        self.chat_list.setMarkdown(self.chat_history_str)
         self.chat_input.clear()
         self.send_btn.setEnabled(False)
-        self.chat_list.addItem("🤖 AI: (O'ylamoqda...)")
-        self.chat_list.scrollToBottom()
+        self.send_btn.setText("O'ylamoqda...")
         
-        #self.ai_messages[0]["content"] = """"""
-        
-        self.worker = AIChatWorker(self.ai_messages)
+        self.worker = AIChatWorker(self.ai_messages, getattr(self, 'current_df', None))
         self.worker.response_ready.connect(self._ai_response)
         self.worker.error_occurred.connect(self._ai_error)
         self.worker.start()
 
     def _ai_response(self, text):
         self.ai_messages.append({"role": "assistant", "content": text})
-        self.chat_list.takeItem(self.chat_list.count()-1)
-        self.chat_list.addItem(f"🤖 AI: {text}")
-        self.chat_list.scrollToBottom()
+        self.chat_history_str += f"**🤖 AI:**\n{text}\n\n---\n\n"
+        self.chat_list.setMarkdown(self.chat_history_str)
         self.send_btn.setEnabled(True)
+        self.send_btn.setText("Yuborish")
+        
+        # Scroll to bottom smoothly since setMarkdown redraws layout
+        scrollbar = self.chat_list.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
 
     def _ai_error(self, err_msg):
-        self.chat_list.takeItem(self.chat_list.count()-1)
-        self.chat_list.addItem(f"❌ Xato: {err_msg}")
-        self.chat_list.scrollToBottom()
+        self.chat_history_str += f"**❌ Xato:** {err_msg}\n\n---\n\n"
+        self.chat_list.setMarkdown(self.chat_history_str)
         self.send_btn.setEnabled(True)
+        self.send_btn.setText("Yuborish")
+        
+        scrollbar = self.chat_list.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
